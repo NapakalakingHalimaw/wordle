@@ -164,6 +164,7 @@
             socket.on('generateWord', (data) => {
                 if(data.status != 200) {
                     alert(data.errorMessage);
+                    return;
                 }
 
                 document.getElementById('userStatus_' + socket.username).style.color = "initial";
