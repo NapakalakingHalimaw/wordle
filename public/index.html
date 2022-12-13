@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+    <head>
+        <meta charset="utf-8">
+        <title>Unknown Power Wordle</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <meta name="author" content="Napakalaking Halimaw" />
+        <meta name="description" content="Multiplayer wordle" />
+        <meta name="keywords" content="Wordle, Multiplayer Worlde" />
+        <link rel="stylesheet" href="css/main.css">
+        <link rel="preconnect" href="https://fonts.gstatic.com">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,400i,600,700,800&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300&display=swap" rel="stylesheet">
+        <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    </head>
+    <body>
+        <div id="intermission" class="intermission">
+            <div class="center">
+                <h1>Unknown Power Wordle</h1>
+                <br>
+                <input id="username" type="text" name="username" placeholder="Specify a username">
+                <script type="text/javascript">
+                    document.getElementById('username').addEventListener("keyup", function(e) {
+                        if(e.key === 'Enter') {
+                            e.preventDefault();
+                            document.getElementById('connect').click();
+                        }
+                    });
+                </script>
+                <br>
+                <div id="mode">
+                    <h2>Work in progress!</h2>
+                    <button title="Every player has his own word. Everyone plays freely without any restrictions." id="mode_ffa" name="ffa" class="btn-3d red active" onclick="setActive('ffa')" onmouseover="hint('ffa')" disabled>Free for All</button>
+                    <button title="Every player has the same word. After guessing the word you will wait for others to finish their turn." id="mode_competitive" name="competitive" class="btn-3d red" onclick="setActive('competitive')" onmouseover="hint('competitive')" disabled>Competitive</button>
+                </div>
+                <br>
+                <button id="connect" type="button" name="connect" class="btn-3d red" onclick="connect(socket, document.querySelector('#username').value)">Join in!</button>
+            </div>
+        </div>
+        <div id="game" class="game" style="display:none"></div>
+        
+        <script src="js/buttons.js"></script>
+        <script src="js/user.js"></script>
+        <script src="js/keyboard.js"></script>
+        <script src="js/wordle.js"></script>
+        <script src="/socket.io/socket.io.js"></script>
+        <script>
+            var socket = io({ autoConnect:false });
+            var virtualKeyboard = null;
+            var wordle = null;
+
+            socket.on('connect_error', (err) => {
+                alert(err);
+            });
+
+            socket.on('newUser', (user) => {
+                let newUser = document.createElement('div');
+                newUser.setAttribute('id', user.username);
+                newUser.classList.add('user');
+                newUser.textContent = user.username;
+
+                let userStatus = document.createElement('span');
+                userStatus.setAttribute('id', 'userStatus_' + user.username);
+                userStatus.style.float = "right";
+                userStatus.innerHTML = `<font id='correctLetters_${user.username}' style='color:green'>0</font> - <font id='attempt_${user.username}'>${user.attempt+1}</font>`;
+                newUser.appendChild(userStatus);
+                
+                document.getElementById('usersPanel').appendChild(newUser);
+                document.getElementById('chat').append(user.username + " has connected!\r\n");
+            });
+
+            socket.on('userDisconnected', (user) => {
+                console.log(user);
+                document.getElementById(user).remove();
+                document.getElementById('chat').append(user + " has disconnected!\r\n");
+            });
+
+            socket.on('setup', (json) => {
+                gameSetup(json);
+            });
+
+            socket.on('userMessage', (message) => {
+                if(document.getElementById('chat') !== null) {
+                    document.getElementById('chat').append(message.username + ": " + message.message + "\r\n");
+                }
+            });
+
+            socket.on('validateWord', (data) => {
+                console.log(data);
+                if(data.status == 200) {
+                    socket.attempt = data.attempt;
+                    document.getElementById('attempt_' + socket.username).innerText = (socket.attempt+1);
+                    document.getElementById('correctLetters_' + socket.username).innerText = data.greens;
+
+                    wordle.colorLetters(data.colors);
+                    virtualKeyboard.colorKeys(wordle.getWord(), data.colors);
+                    wordle.reset();
+
+                    console.log(data.attempt + " / " + wordle.getAttempts());
+
+                    if(data.correct) {
+                        document.getElementById('userStatus_' + socket.username).style.color = "green";
+                        document.getElementById('userStatus_' + socket.username).style.fontWeight = 'bold';
+                        document.getElementById('userStatus_' + socket.username).innerText = "FINISHED!"
+                        if(document.getElementById('chat') !== null) {
+                            document.getElementById('chat').append(socket.username + " guessed in " + socket.attempt + " attempts his word: " + data.word + "\r\n");
+                        }
+                        setTimeout(() => wordle.clear(), 5000);
+                        setTimeout(() => virtualKeyboard.clear(), 5000);
+                    } else if(data.attempt >= wordle.getAttempts()) {
+                        document.getElementById('userStatus_' + socket.username).style.color = "red";
+                        document.getElementById('userStatus_' + socket.username).style.fontWeight = 'bold';
+                        document.getElementById('userStatus_' + socket.username).innerText = "FAILED!"
+                        setTimeout(() => wordle.showWord(), 1000);
+                        setTimeout(() => wordle.clear(), 5000);
+                        setTimeout(() => virtualKeyboard.clear(), 5000);
+                    }
+                } else if(data.status == 404) {
+                    alert(data.errorMessage);
+                } else {
+                    alert(`Error ${data.status}! Message: ${data.errorMessage}`);
+                }
+            });
+
+            socket.on('updateUser', (data) => {
+                console.log(data);
+                if(data.type == "validateWord") {
+                    if(data.correct) {
+                        document.getElementById('userStatus_' + data.username).style.color = "green";
+                        document.getElementById('userStatus_' + data.username).style.fontWeight = 'bold';
+                        document.getElementById('userStatus_' + data.username).innerText = "FINISHED!"
+                        if(document.getElementById('chat') !== null) {
+                            document.getElementById('chat').append(data.username + " guessed in " + data.attempt + " attempts his word: " + data.word + "\r\n");
+                        }
+                    } else if(data.attempt >= wordle.getAttempts()) {
+                        document.getElementById('userStatus_' + data.username).style.color = "red";
+                        document.getElementById('userStatus_' + data.username).style.fontWeight = 'bold';
+                        document.getElementById('userStatus_' + data.username).innerText = "FAILED!"
+                        if(document.getElementById('chat') !== null) {
+                            document.getElementById('chat').append(data.username + " failed to guess his word: " + data.word + "\r\n");
+                        }
+                    } else {
+                        document.getElementById('attempt_' + data.username).innerText = (data.attempt+1);
+                        document.getElementById('correctLetters_' + data.username).innerText = data.greens;
+                    }
+                } else if(data.type == "generateWord") {
+                    document.getElementById('userStatus_' + data.username).style.color = "initial";
+                    document.getElementById('userStatus_' + data.username).style.fontWeight = "initial";
+                    document.getElementById('userStatus_' + data.username).innerHTML = `<font id='correctLetters_${data.username}' style='color:green'>0</font> - <font id='attempt_${data.username}'>1</font>`;
+                }
+            });
+
+            socket.on('showWord', (data) => {
+                if(data.status == 200) {
+                    alert("Your word was: " + data.word);
+                    if(document.getElementById('chat') !== null) {
+                        document.getElementById('chat').append(socket.username + " failed to guess his word: " + data.word + "\r\n");
+                    }
+                } else {
+                    alert(data.errorMessage);
+                }
+            });
+
+            socket.on('generateWord', (data) => {
+                if(data.status != 200) {
+                    alert(data.errorMessage);
+                }
+
+                document.getElementById('userStatus_' + socket.username).style.color = "initial";
+                document.getElementById('userStatus_' + socket.username).innerHTML = `<font id='correctLetters_${socket.username}' style='color:green'>0</font> - <font id='attempt_${socket.username}'>1</font>`;
+            });
+        </script>
+    </body>
+</html>
